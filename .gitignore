@@ -15,4 +15,5 @@ __pycache__/
 # folders that contain data to ignore
 debug/
 plots/
-results/
+results/*
+!results/.gitkeep
