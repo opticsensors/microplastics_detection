@@ -85,6 +85,37 @@ class ImageApp:
                 messagebox.showerror("Error", "No images found in the selected folder.")
         except Exception as e:
             messagebox.showerror("Error", f"Error loading images: {e}")
+
+    def load_images_with_scale(self): #TODO add it to the gui!!!!!
+        # Initialize a dictionary to store scales
+        self.image_scales = {}
+        
+        # Get images from the white background images folder
+        try:
+            self.image_files = [f for f in os.listdir(self.white_bg_images_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
+            if self.image_files:
+                # Compute scale for each image in the original images folder
+                for image_file in self.image_files:
+                    original_image_path = os.path.join(self.original_images_folder, image_file)
+                    if os.path.exists(original_image_path):
+                        # Load the image and compute scale
+                        original_img = cv2.imread(original_image_path)
+                        pixel_length, text = get_scale(original_img)
+                        scale = extract_float(text) / pixel_length
+                        
+                        # Store the scale in the dictionary
+                        self.image_scales[image_file] = scale
+                    else:
+                        # Handle missing original image
+                        self.image_scales[image_file] = None
+                
+                # Set the current image index and display the first image
+                self.current_image_index = 0
+                self.show_current_image()
+            else:
+                messagebox.showerror("Error", "No images found in the selected folder.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error loading images: {e}")
     
     def process_and_display_images(self, input_image, ):
         """Process the input image and display processed results"""

@@ -34,8 +34,7 @@ for i, filename in enumerate(os.listdir(input_folder), start=1):
         pixel_length, text = get_scale(img)
         scale = extract_float(text)
         s = scale / pixel_length
-        s = 1  # Adjust scale as needed
-        print('Scale done!')
+        print('Scale value', s)
 
         # Step 2: Thresholding methods
         resu1 = thresh_method(img, **p1)
