@@ -1,9 +1,7 @@
 import numpy as np
 import cv2
-import os
 import sympy
 import math
-import re
 from fitters import ParallelogramFitter, QuadrilateralFitter
 
 

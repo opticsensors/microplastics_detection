@@ -72,7 +72,7 @@ class ImageApp:
     
     def check_all_folders_selected(self):
         if all([self.original_images_folder, self.white_bg_images_folder, self.save_folder]):
-            self.load_images()
+            self.load_images_with_scale()
     
     def load_images(self):
         # Get images from the white background images folder
@@ -117,7 +117,7 @@ class ImageApp:
         except Exception as e:
             messagebox.showerror("Error", f"Error loading images: {e}")
     
-    def process_and_display_images(self, input_image, ):
+    def process_and_display_images(self, input_image, scale):
         """Process the input image and display processed results"""
         # Save the input image
         image_name = f"blob_{self.image_name}.png"
@@ -130,10 +130,10 @@ class ImageApp:
         self.midpoints3 = quad_fit(input_image, method='para')
         self.midpoints4 = quad_fit(input_image, method='quad')
         
-        img_to_save1 = draw_midpoints_fit(self.current_image, self.midpoints1, scale=1)
-        img_to_save2 = draw_midpoints_fit(self.current_image, self.midpoints2, scale=1)
-        img_to_save3 = draw_midpoints_fit(self.current_image, self.midpoints3, scale=1)
-        img_to_save4 = draw_midpoints_fit(self.current_image, self.midpoints4, scale=1)
+        img_to_save1 = draw_midpoints_fit(self.current_image, self.midpoints1, scale=scale)
+        img_to_save2 = draw_midpoints_fit(self.current_image, self.midpoints2, scale=scale)
+        img_to_save3 = draw_midpoints_fit(self.current_image, self.midpoints3, scale=scale)
+        img_to_save4 = draw_midpoints_fit(self.current_image, self.midpoints4, scale=scale)
         
         # Display processed images
         self.display_processed_images([img_to_save1, img_to_save2, img_to_save3, img_to_save4])
@@ -327,7 +327,7 @@ class ImageApp:
         def on_back_click():
             # Save the updated midpoints (convert back to original scale)
             self.final_midpoints = np.array([(int(x / scale), int(y / scale)) for x, y in scaled_midpoints])
-            img_to_save = draw_midpoints_fit(self.current_image, self.final_midpoints, scale=1)
+            img_to_save = draw_midpoints_fit(self.current_image, self.final_midpoints, scale=self.scale)
             image_name = f'axis_{self.image_name}.png'
             save_path = os.path.join(self.save_folder, image_name)
             cv2.imwrite(save_path, img_to_save)
@@ -384,11 +384,13 @@ class ImageApp:
         # Display processed images
         frame = tk.Frame(self.root)
         frame.pack()
+
+        self.scale=self.image_scales[image_file]
         
         resu1_label = tk.Button(
             frame,
             image=resu1_photo,
-            command=lambda img=resu1: self.process_and_display_images(img, )
+            command=lambda img=resu1: self.process_and_display_images(img, self.scale)
         )
         resu1_label.image = resu1_photo
         resu1_label.pack(side=tk.LEFT, padx=20)
@@ -396,7 +398,7 @@ class ImageApp:
         resu2_label = tk.Button(
             frame,
             image=resu2_photo,
-            command=lambda img=resu2: self.process_and_display_images(img, )
+            command=lambda img=resu2: self.process_and_display_images(img, self.scale)
         )
         resu2_label.image = resu2_photo
         resu2_label.pack(side=tk.RIGHT, padx=20)
