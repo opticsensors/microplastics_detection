@@ -20,3 +20,6 @@ results/*
 
 weights/*
 !weights/.gitkeep
+
+particles/*
+!particles/.gitkeep

@@ -37,6 +37,9 @@ def vertices_to_midpoints(vertices):
     midpoint4 = (v4 + v1) / 2  # Edge between points 4 and 1
     return np.vstack([midpoint1,midpoint2,midpoint3,midpoint4])
 
+def midpoints_to_axis(midpoints):
+    return (midpoints[0], midpoints[3]), (midpoints[2], midpoints[4])
+
 def quad_fit(binary_img, method, n=4,):
 
     contours, _ = cv2.findContours(binary_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -214,25 +217,36 @@ def max_min_fit(binary_img):
     return np.vstack([pmax,pmin,pmax2,pmin2])
 
 def draw_midpoints_fit(img, midpoints, scale=1):
-
-    midpoint1 = midpoints[0]
-    midpoint2 = midpoints[1]
-    midpoint3 = midpoints[2]
-    midpoint4 = midpoints[3]
-
+    midpoint1, midpoint2, midpoint3, midpoint4 = midpoints
+    
+    # Calculate lengths
     len1 = np.linalg.norm(midpoint1-midpoint3)*scale
     len2 = np.linalg.norm(midpoint2-midpoint4)*scale
-
-    p1 = midpoint1 if midpoint1[0]>midpoint3[0] else midpoint3
-    p2 = midpoint2 if midpoint2[0]>midpoint4[0] else midpoint4
-
+    
+    # Determine colors based on which axis is longer
+    if len1 > len2:
+        color1, color2 = (0, 0, 255), (255, 0, 0)  # len1 is red, len2 is blue
+    else:
+        color1, color2 = (255, 0, 0), (0, 0, 255)  # len1 is blue, len2 is red
+    
+    # Text positions
+    p1 = midpoint1 if midpoint1[0] > midpoint3[0] else midpoint3
+    p2 = midpoint2 if midpoint2[0] > midpoint4[0] else midpoint4
+    
     img_to_save = img.copy()
-    cv2.line(img_to_save, (int(midpoint1[0]),int(midpoint1[1])), (int(midpoint3[0]),int(midpoint3[1])), (255, 0, 0), thickness=3)
-    cv2.putText(img_to_save, f"{len1:.2f} mm", (int(p1[0])+20, int(p1[1])-3),cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 3)
-
-    cv2.line(img_to_save, (int(midpoint2[0]),int(midpoint2[1])), (int(midpoint4[0]),int(midpoint4[1])), (0, 0, 255), thickness=3)
-    cv2.putText(img_to_save, f"{len2:.2f} mm", (int(p2[0])+20, int(p2[1])-3),cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
-
+    
+    # Draw first axis
+    cv2.line(img_to_save, (int(midpoint1[0]), int(midpoint1[1])), 
+             (int(midpoint3[0]), int(midpoint3[1])), color1, thickness=3)
+    cv2.putText(img_to_save, f"{len1:.2f} mm", (int(p1[0])+20, int(p1[1])-3),
+               cv2.FONT_HERSHEY_SIMPLEX, 1, color1, 3)
+    
+    # Draw second axis
+    cv2.line(img_to_save, (int(midpoint2[0]), int(midpoint2[1])), 
+             (int(midpoint4[0]), int(midpoint4[1])), color2, thickness=3)
+    cv2.putText(img_to_save, f"{len2:.2f} mm", (int(p2[0])+20, int(p2[1])-3),
+               cv2.FONT_HERSHEY_SIMPLEX, 1, color2, 3)
+    
     return img_to_save, len1, len2
 
 def compute_size_given_axis_len(len_axis_y):

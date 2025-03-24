@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import time
 
-img = cv2.imread(f'./particles/Captured 1.jpg')
+img = cv2.imread(f'./particles/P5-F2.jpg')
 
 hsv=cv2.cvtColor(img.copy(), cv2.COLOR_BGR2HSV)
 
