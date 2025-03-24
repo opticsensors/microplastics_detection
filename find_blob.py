@@ -15,7 +15,7 @@ def find_largest_contour(thresh):
         return largest_contour_filled
     
     else:
-        raise ValueError("No contours found in the image.")
+        return np.zeros((thresh.shape[0], thresh.shape[1]), dtype=np.uint8)
     
 def thresh_method(img, **kwargs):
 

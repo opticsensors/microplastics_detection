@@ -14,8 +14,7 @@ class ImageApp:
         self.root.geometry("1400x960")
         
         # Attributes to store folder paths
-        self.original_images_folder = None
-        self.white_bg_images_folder = None
+        self.input_images_folder = None
         self.save_folder = None
         
         # Image-related attributes
@@ -36,34 +35,16 @@ class ImageApp:
         frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
         
         # Buttons for selecting folders
-        tk.Button(frame, text="Select Original Images Folder", 
-                  command=self.select_original_images_folder, 
+        tk.Button(frame, text="Select Input Images Folder", 
+                  command=self.select_input_images_folder, 
                   width=40).pack(pady=10)
         
-        tk.Button(frame, text="Select White Background Images Folder", 
-                  command=self.select_white_bg_images_folder, 
-                  width=40).pack(pady=10)
-        
-        tk.Button(frame, text="Select Save Folder", 
+        tk.Button(frame, text="Select Output Folder", 
                   command=self.select_save_folder, 
                   width=40).pack(pady=10)
     
-    def create_folder_selection_screen(self):
-        # Clear existing widgets
-        for widget in self.root.winfo_children():
-            widget.destroy()
-        
-        # Buttons for selecting folders
-        tk.Button(self.root, text="Select Original Images Folder", command=self.select_original_images_folder, width=40).pack(pady=20)
-        tk.Button(self.root, text="Select White Background Images Folder", command=self.select_white_bg_images_folder, width=40).pack(pady=20)
-        tk.Button(self.root, text="Select Save Folder", command=self.select_save_folder, width=40).pack(pady=20)
-    
-    def select_original_images_folder(self):
-        self.original_images_folder = filedialog.askdirectory(title="Select Original Images Folder")
-        self.check_all_folders_selected()
-    
-    def select_white_bg_images_folder(self):
-        self.white_bg_images_folder = filedialog.askdirectory(title="Select White Background Images Folder")
+    def select_input_images_folder(self):
+        self.input_images_folder = filedialog.askdirectory(title="Select Original Images Folder")
         self.check_all_folders_selected()
     
     def select_save_folder(self):
@@ -71,13 +52,13 @@ class ImageApp:
         self.check_all_folders_selected()
     
     def check_all_folders_selected(self):
-        if all([self.original_images_folder, self.white_bg_images_folder, self.save_folder]):
+        if all([self.input_images_folder, self.save_folder]):
             self.load_images_with_scale()
     
     def load_images(self):
         # Get images from the white background images folder
         try:
-            self.image_files = [f for f in os.listdir(self.white_bg_images_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
+            self.image_files = [f for f in os.listdir(self.input_images_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
             if self.image_files:
                 self.current_image_index = 0
                 self.show_current_image()
@@ -86,17 +67,17 @@ class ImageApp:
         except Exception as e:
             messagebox.showerror("Error", f"Error loading images: {e}")
 
-    def load_images_with_scale(self): #TODO add it to the gui!!!!!
+    def load_images_with_scale(self):
         # Initialize a dictionary to store scales
         self.image_scales = {}
         
         # Get images from the white background images folder
         try:
-            self.image_files = [f for f in os.listdir(self.white_bg_images_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
+            self.image_files = [f for f in os.listdir(self.input_images_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
             if self.image_files:
                 # Compute scale for each image in the original images folder
                 for image_file in self.image_files:
-                    original_image_path = os.path.join(self.original_images_folder, image_file)
+                    original_image_path = os.path.join(self.input_images_folder, image_file)
                     if os.path.exists(original_image_path):
                         # Load the image and compute scale
                         original_img = cv2.imread(original_image_path)
@@ -119,11 +100,6 @@ class ImageApp:
     
     def process_and_display_images(self, input_image, scale):
         """Process the input image and display processed results"""
-        # Save the input image
-        image_name = f"blob_{self.image_name}.png"
-        save_path = os.path.join(self.save_folder, image_name)
-        cv2.imwrite(save_path, input_image)
-        
         # Process the image to compute new results
         self.midpoints1 = quad_fit(input_image, method='rect')
         self.midpoints2 = max_min_fit(input_image)
@@ -183,16 +159,15 @@ class ImageApp:
         nav_frame = tk.Frame(self.root)
         nav_frame.pack(pady=10)
         
-        # Previous button
-        prev_button = tk.Button(nav_frame, text="Previous", 
-                                command=self.previous_image, 
-                                state=tk.DISABLED if self.current_image_index == 0 else tk.NORMAL)
-        prev_button.pack(side=tk.LEFT, padx=10)
+        # Back button (instead of Previous)
+        back_button = tk.Button(nav_frame, text="Back", 
+                               command=self.show_current_image)
+        back_button.pack(side=tk.LEFT, padx=10)
         
-        # Next button
+        # Next button - just navigate without saving
         next_button = tk.Button(nav_frame, text="Next", 
-                                command=self.next_image, 
-                                state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL)
+                               command=self.next_image_without_saving, 
+                               state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL)
         next_button.pack(side=tk.RIGHT, padx=10)
 
     def on_image_click(self, img, midpoints):
@@ -237,27 +212,19 @@ class ImageApp:
         nav_frame = tk.Frame(self.root)
         nav_frame.pack(pady=10)
 
-        # Previous button
-        prev_button = tk.Button(
-            nav_frame,
-            text="Previous",
-            command=self.previous_image,
-            state=tk.DISABLED if self.current_image_index == 0 else tk.NORMAL
-        )
-        prev_button.pack(side=tk.LEFT, padx=10)
-
         # Back button to return to the four-image screen
-        back_button = tk.Button(nav_frame, text="Back", command=self.show_current_image)
+        back_button = tk.Button(nav_frame, text="Back", 
+                              command=lambda: self.process_and_display_images(self.current_binary_image, self.scale))
         back_button.pack(side=tk.LEFT, padx=10)
 
-        # Next button
-        next_button = tk.Button(
+        # Next and Save button
+        next_save_button = tk.Button(
             nav_frame,
-            text="Next",
-            command=self.next_image,
+            text="Next and Save",
+            command=self.save_and_next_image,
             state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL
         )
-        next_button.pack(side=tk.RIGHT, padx=10)
+        next_save_button.pack(side=tk.RIGHT, padx=10)
 
     def enable_interactive_mode(self, image, midpoints):
         """Enable the user to interact with the lines using the cursor."""
@@ -325,17 +292,35 @@ class ImageApp:
 
         # Function to handle "Back" button click
         def on_back_click():
+            # Return to the four-image view without saving
+            self.process_and_display_images(self.current_binary_image, self.scale)
+
+        # Function to save and go to next image
+        def on_save_next_click():
             # Save the updated midpoints (convert back to original scale)
-            self.final_midpoints = np.array([(int(x / scale), int(y / scale)) for x, y in scaled_midpoints])
-            img_to_save = draw_midpoints_fit(self.current_image, self.final_midpoints, scale=self.scale)
+            final_midpoints = np.array([(int(x / scale), int(y / scale)) for x, y in scaled_midpoints])
+            img_to_save = draw_midpoints_fit(self.current_image, final_midpoints, scale=self.scale)
             image_name = f'axis_{self.image_name}.png'
             save_path = os.path.join(self.save_folder, image_name)
             cv2.imwrite(save_path, img_to_save)
-            self.show_current_image()
+            self.next_image()
+
+        # Button frame
+        button_frame = tk.Frame(self.root)
+        button_frame.pack(pady=10)
 
         # Back button to return to the four-image view
-        back_button = tk.Button(self.root, text="Back", command=on_back_click)
-        back_button.pack(pady=10)
+        back_button = tk.Button(button_frame, text="Back", command=on_back_click)
+        back_button.pack(side=tk.LEFT, padx=10)
+
+        # Next and Save button
+        next_save_button = tk.Button(
+            button_frame, 
+            text="Next and Save", 
+            command=on_save_next_click,
+            state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL
+        )
+        next_save_button.pack(side=tk.RIGHT, padx=10)
 
 
     def show_current_image(self):
@@ -345,7 +330,7 @@ class ImageApp:
         
         # Get current image
         image_file = self.image_files[self.current_image_index]
-        image_path = os.path.join(self.white_bg_images_folder, image_file)
+        image_path = os.path.join(self.input_images_folder, image_file)
         self.image_name = os.path.splitext(image_file)[0]
         
         # Load the image with OpenCV
@@ -385,12 +370,12 @@ class ImageApp:
         frame = tk.Frame(self.root)
         frame.pack()
 
-        self.scale=self.image_scales[image_file]
+        self.scale = self.image_scales[image_file]
         
         resu1_label = tk.Button(
             frame,
             image=resu1_photo,
-            command=lambda img=resu1: self.process_and_display_images(img, self.scale)
+            command=lambda img=resu1: self.process_binary_image(img)
         )
         resu1_label.image = resu1_photo
         resu1_label.pack(side=tk.LEFT, padx=20)
@@ -398,7 +383,7 @@ class ImageApp:
         resu2_label = tk.Button(
             frame,
             image=resu2_photo,
-            command=lambda img=resu2: self.process_and_display_images(img, self.scale)
+            command=lambda img=resu2: self.process_binary_image(img)
         )
         resu2_label.image = resu2_photo
         resu2_label.pack(side=tk.RIGHT, padx=20)
@@ -413,17 +398,37 @@ class ImageApp:
                                 state=tk.DISABLED if self.current_image_index == 0 else tk.NORMAL)
         prev_button.pack(side=tk.LEFT, padx=10)
         
-        # Next button
+        # Next button - just navigate without saving
         next_button = tk.Button(nav_frame, text="Next", 
-                                command=self.next_image, 
-                                state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL)
+                               command=self.next_image_without_saving, 
+                               state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL)
         next_button.pack(side=tk.RIGHT, padx=10)
+    
+    def process_binary_image(self, binary_image):
+        """Store the binary image and process it"""
+        self.current_binary_image = binary_image
+        self.process_and_display_images(binary_image, self.scale)
+    
+    def next_image_without_saving(self):
+        """Move to the next image without saving anything."""
+        if self.current_image_index < len(self.image_files) - 1:
+            self.current_image_index += 1
+            self.show_current_image()
     
     def next_image(self):
         """Move to the next image if available."""
         if self.current_image_index < len(self.image_files) - 1:
             self.current_image_index += 1
             self.show_current_image()
+    
+    def save_and_next_image(self):
+        # Save the current image with axis lines using the selected midpoints.
+        if hasattr(self, 'selected_midpoints'):
+            img_to_save = draw_midpoints_fit(self.current_image, self.selected_midpoints, scale=self.scale)
+            image_name = f'axis_{self.image_name}.png'
+            save_path = os.path.join(self.save_folder, image_name)
+            cv2.imwrite(save_path, img_to_save)
+        self.next_image()
     
     def previous_image(self):
         """Move to the previous image if available."""

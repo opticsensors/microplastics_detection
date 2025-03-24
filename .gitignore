@@ -17,3 +17,6 @@ debug/
 plots/
 results/*
 !results/.gitkeep
+
+weights/*
+!weights/.gitkeep
