@@ -233,7 +233,18 @@ def draw_midpoints_fit(img, midpoints, scale=1):
     cv2.line(img_to_save, (int(midpoint2[0]),int(midpoint2[1])), (int(midpoint4[0]),int(midpoint4[1])), (0, 0, 255), thickness=3)
     cv2.putText(img_to_save, f"{len2:.2f} mm", (int(p2[0])+20, int(p2[1])-3),cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
 
-    return img_to_save
+    return img_to_save, len1, len2
 
+def compute_size_given_axis_len(len_axis_y):
+    if len_axis_y >= 999 and len_axis_y <= 4999:
+        return "1000-4999"
+    elif len_axis_y >= 5000 and len_axis_y <= 24999:
+        return ">5 mm"
+    elif len_axis_y >= 25000:
+        return ">2.5 cm"
+    elif len_axis_y < 300:
+        return "<300"
+    else:
+        return "300-999"
 
 

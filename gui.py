@@ -6,6 +6,9 @@ import os
 from find_axis import *
 from find_blob import *
 from find_scale import *
+import json
+import re
+
 
 class ImageApp:
     def __init__(self, root):
@@ -106,10 +109,10 @@ class ImageApp:
         self.midpoints3 = quad_fit(input_image, method='para')
         self.midpoints4 = quad_fit(input_image, method='quad')
         
-        img_to_save1 = draw_midpoints_fit(self.current_image, self.midpoints1, scale=scale)
-        img_to_save2 = draw_midpoints_fit(self.current_image, self.midpoints2, scale=scale)
-        img_to_save3 = draw_midpoints_fit(self.current_image, self.midpoints3, scale=scale)
-        img_to_save4 = draw_midpoints_fit(self.current_image, self.midpoints4, scale=scale)
+        img_to_save1, _ , _ = draw_midpoints_fit(self.current_image, self.midpoints1, scale=scale)
+        img_to_save2, _ , _ = draw_midpoints_fit(self.current_image, self.midpoints2, scale=scale)
+        img_to_save3, _ , _ = draw_midpoints_fit(self.current_image, self.midpoints3, scale=scale)
+        img_to_save4, _ , _ = draw_midpoints_fit(self.current_image, self.midpoints4, scale=scale)
         
         # Display processed images
         self.display_processed_images([img_to_save1, img_to_save2, img_to_save3, img_to_save4])
@@ -121,7 +124,9 @@ class ImageApp:
             widget.destroy()
         
         # Display image info
-        tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)}").pack()
+        image_file = self.image_files[self.current_image_index]
+        image_name = os.path.splitext(image_file)[0]
+        tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)} - {image_name}").pack()
         
         # Resize and display processed images
         frame_top = tk.Frame(self.root)
@@ -191,6 +196,9 @@ class ImageApp:
         img_resized = cv2.resize(selected_image, new_size)
         img_photo = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)))
 
+        # Display image info
+        tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)} - {self.image_name}").pack()
+        
         # Create a frame for the image to allow space for buttons
         image_frame = tk.Frame(self.root)
         image_frame.pack(pady=20)
@@ -232,6 +240,10 @@ class ImageApp:
         for widget in self.root.winfo_children():
             widget.destroy()
 
+        # Display image info
+        info_label = tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)} - {self.image_name}")
+        info_label.pack()
+        
         # Set up canvas for image and interactivity
         canvas = tk.Canvas(self.root, width=1200, height=800, bg="white")
         canvas.pack(fill=tk.BOTH, expand=True)
@@ -299,11 +311,8 @@ class ImageApp:
         def on_save_next_click():
             # Save the updated midpoints (convert back to original scale)
             final_midpoints = np.array([(int(x / scale), int(y / scale)) for x, y in scaled_midpoints])
-            img_to_save = draw_midpoints_fit(self.current_image, final_midpoints, scale=self.scale)
-            image_name = f'axis_{self.image_name}.png'
-            save_path = os.path.join(self.save_folder, image_name)
-            cv2.imwrite(save_path, img_to_save)
-            self.next_image()
+            self.selected_midpoints = final_midpoints
+            self.save_and_next_image()
 
         # Button frame
         button_frame = tk.Frame(self.root)
@@ -356,7 +365,7 @@ class ImageApp:
         resu2_photo = ImageTk.PhotoImage(Image.fromarray(resu2_resized))
         
         # Display image info
-        tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)}").pack()
+        tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)} - {self.image_name}").pack()
         
         # Display original image
         original_label = tk.Button(
@@ -424,10 +433,33 @@ class ImageApp:
     def save_and_next_image(self):
         # Save the current image with axis lines using the selected midpoints.
         if hasattr(self, 'selected_midpoints'):
-            img_to_save = draw_midpoints_fit(self.current_image, self.selected_midpoints, scale=self.scale)
-            image_name = f'axis_{self.image_name}.png'
+            img_to_save, axis_length1, axis_length2 = draw_midpoints_fit(self.current_image, self.selected_midpoints, scale=self.scale)
+            image_name = f'{self.image_name}.png'
             save_path = os.path.join(self.save_folder, image_name)
             cv2.imwrite(save_path, img_to_save)
+
+        if axis_length1 <= axis_length2:
+            axis_x, axis_y = axis_length1, axis_length2
+        else:
+            axis_x, axis_y = axis_length2, axis_length1
+        
+        data = {
+            "id": self.current_image_index + 1,
+            "image_name": self.image_name,
+            "surface": 'plate',
+            "plate_number": re.search(r"P(\d+)", image_name).group(1),
+            "plate_hole": re.search(r"-([A-Za-z]\d+)", image_name).group(1),
+            "axis_x": axis_x,
+            "axis_y": axis_y,
+            "size": compute_size_given_axis_len(axis_y),
+            # "colour": colour,
+            # "transparency": transparency,
+
+        }
+        data_filename = os.path.join(self.save_folder, f'{self.image_name}.json')
+        with open(data_filename, 'w') as f:
+            json.dump(data, f, indent=4)
+
         self.next_image()
     
     def previous_image(self):
