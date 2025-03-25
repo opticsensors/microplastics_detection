@@ -11,6 +11,8 @@ import re
 import numpy as np
 import torch
 from ultralytics import FastSAM
+from segment_anything import sam_model_registry, SamPredictor
+
 
 
 class ImageApp:
@@ -20,7 +22,7 @@ class ImageApp:
         self.root.geometry("1400x960")
 
         self.scale_type = 'white'
-        self.segmentation_algorithm = 'fastsam'
+        self.segmentation_algorithm = 'fastsam'  # Default, can be changed to 'sam'
 
         # Attributes to store folder paths
         self.input_images_folder = None
@@ -39,19 +41,9 @@ class ImageApp:
         self.points = []
         self.point_markers = []
         
-        # Initialize FastSAM model
+        # Initialize device
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
-        if self.segmentation_algorithm == 'fastsam':
-            self.model_weights = os.path.join("weights", "FastSAM.pt")  # Assuming weights are in folder "weights"
-            self.model = FastSAM(self.model_weights)
-            print(f"FastSAM model loaded from {self.model_weights}")
-
-        #TODO
-        #elif self.segmentation_algorithm == 'sam':
-        #    self.model_weights = os.path.join("weights", "sam_vit_b_01ec64.pth")  # Assuming weights are in folder "weights"
-        #    self.model = FastSAM(self.model_weights)
-        #    print(f"FastSAM model loaded from {self.model_weights}")
+        print(f"Using device: {self.device}")
 
         # Initial screen with buttons
         self.create_folder_selection_screen()
@@ -65,6 +57,21 @@ class ImageApp:
         frame = tk.Frame(self.root)
         frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
         
+        # Algorithm selection
+        algorithm_frame = tk.Frame(frame)
+        algorithm_frame.pack(pady=10)
+        
+        algorithm_label = tk.Label(algorithm_frame, text="Select Segmentation Algorithm:")
+        algorithm_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        self.algorithm_var = tk.StringVar(value=self.segmentation_algorithm)
+        
+        fastsam_rb = tk.Radiobutton(algorithm_frame, text="FastSAM", variable=self.algorithm_var, value="fastsam")
+        fastsam_rb.pack(side=tk.LEFT)
+        
+        sam_rb = tk.Radiobutton(algorithm_frame, text="SAM", variable=self.algorithm_var, value="sam")
+        sam_rb.pack(side=tk.LEFT)
+        
         # Buttons for selecting folders
         tk.Button(frame, text="Select Input Images Folder", 
                   command=self.select_input_images_folder, 
@@ -73,18 +80,52 @@ class ImageApp:
         tk.Button(frame, text="Select Output Folder", 
                   command=self.select_save_folder, 
                   width=40).pack(pady=10)
+        
+        # Start button
+        tk.Button(frame, text="Start", 
+                  command=self.initialize_algorithm, 
+                  width=40).pack(pady=10)
     
     def select_input_images_folder(self):
         self.input_images_folder = filedialog.askdirectory(title="Select Original Images Folder")
-        self.check_all_folders_selected()
     
     def select_save_folder(self):
         self.save_folder = filedialog.askdirectory(title="Select Save Folder")
-        self.check_all_folders_selected()
     
-    def check_all_folders_selected(self):
-        if all([self.input_images_folder, self.save_folder]):
+    def initialize_algorithm(self):
+        # Get the selected algorithm
+        self.segmentation_algorithm = self.algorithm_var.get()
+        
+        # Check if folders are selected
+        if not all([self.input_images_folder, self.save_folder]):
+            messagebox.showerror("Error", "Please select both input and output folders.")
+            return
+        
+        # Initialize models based on algorithm
+        try:
+            if self.segmentation_algorithm == 'fastsam':
+                # Initialize FastSAM model
+                self.model_weights = os.path.join("weights", "FastSAM.pt")
+                self.model = FastSAM(self.model_weights)
+                print(f"FastSAM model loaded from {self.model_weights}")
+                
+            elif self.segmentation_algorithm == 'sam':
+                # Initialize SAM model
+                self.model_weights = os.path.join("weights", "sam_vit_b_01ec64.pth")
+                self.model_type = "vit_b"  # Could be vit_h, vit_l, vit_b depending on weights
+                
+                # Initialize SAM model
+                self.sam = sam_model_registry[self.model_type](checkpoint=self.model_weights)
+                self.sam.to(self.device)
+                self.predictor = SamPredictor(self.sam)
+                print(f"SAM model loaded from {self.model_weights}")
+                
+            # Continue with loading images
             self.load_images_with_scale()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to initialize model: {str(e)}")
+            print(f"Error initializing model: {str(e)}")
     
     def load_images(self):
         # Get images from the images folder
@@ -192,16 +233,22 @@ class ImageApp:
         nav_frame = tk.Frame(self.root)
         nav_frame.pack(pady=10)
         
-        # Back button (instead of Previous)
+        # Back button
         back_button = tk.Button(nav_frame, text="Back", 
-                               command=self.show_current_image)
+                            command=self.show_current_image)
         back_button.pack(side=tk.LEFT, padx=10)
         
-        # Skip button (renamed from Next) - just navigate without saving
+        # Correct button (new)
+        correct_button = tk.Button(nav_frame, text="Correct", 
+                                command=self.show_correction_screen)
+        correct_button.pack(side=tk.LEFT, padx=10)
+        
+        # Skip button - just navigate without saving
         skip_button = tk.Button(nav_frame, text="Skip", 
-                               command=self.next_image_without_saving, 
-                               state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL)
+                            command=self.next_image_without_saving, 
+                            state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL)
         skip_button.pack(side=tk.RIGHT, padx=10)
+
 
     def on_image_click(self, img, midpoints):
         """Handle image click: zoom to full screen and set selected midpoints."""
@@ -251,10 +298,14 @@ class ImageApp:
         if update_needed:
             # Determine which mode we're in and update accordingly
             if hasattr(self, 'canvas') and self.canvas.winfo_exists():
-                self.update_interactive_display()
+                # Check if we're in correction mode
+                if hasattr(self, 'axis1_points'):
+                    self.update_correction_display_with_color()
+                else:
+                    self.update_interactive_display()
             else:
                 self.update_single_image_display()
-    
+
     def update_single_image_display(self):
         """Update the single image display with new color and transparency."""
         if hasattr(self, 'color_trans_label') and self.color_trans_label.winfo_exists():
@@ -330,12 +381,13 @@ class ImageApp:
                             command=lambda: self.process_and_display_images(self.current_binary_image, self.scale))
         back_button.pack(side=tk.LEFT, padx=10)
 
-        # Next and Save button
+        # Next and Save button (or just Save for the last image)
+        is_last_image = self.current_image_index == len(self.image_files) - 1
         next_save_button = tk.Button(
             nav_frame,
-            text="Next and Save",
+            text="Save" if is_last_image else "Next and Save",
             command=self.save_and_next_image,
-            state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL
+            state=tk.NORMAL  # Always enabled
         )
         next_save_button.pack(side=tk.RIGHT, padx=10)
         
@@ -445,17 +497,19 @@ class ImageApp:
         back_button = tk.Button(button_frame, text="Back", command=on_back_click)
         back_button.pack(side=tk.LEFT, padx=10)
 
-        # Next and Save button
+        # Next and Save button (or just Save for the last image)
+        is_last_image = self.current_image_index == len(self.image_files) - 1
         next_save_button = tk.Button(
             button_frame, 
-            text="Next and Save", 
+            text="Save" if is_last_image else "Next and Save", 
             command=on_save_next_click,
-            state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL
+            state=tk.NORMAL  # Always enabled
         )
         next_save_button.pack(side=tk.RIGHT, padx=10)
         
         # Bind key events
         self.root.bind('<Key>', self.handle_key_press)
+
 
     def show_current_image(self):
         """Display the current image with interactive point selection."""
@@ -476,6 +530,10 @@ class ImageApp:
         # Convert BGR to RGB for processing
         self.current_image = cv2.cvtColor(self.current_image, cv2.COLOR_BGR2RGB)
         
+        # For SAM, we need to set the image in the predictor
+        if self.segmentation_algorithm == 'sam':
+            self.predictor.set_image(self.current_image)
+        
         # Create empty binary image with same dimensions
         self.current_binary_image = np.zeros((self.current_image.shape[0], self.current_image.shape[1]), dtype=np.uint8)
         
@@ -490,7 +548,7 @@ class ImageApp:
         
         # Display image info
         tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)} - {self.image_name}").pack(pady=(10, 0))
-        tk.Label(self.root, text="Click on the image to add points for segmentation").pack(pady=(0, 10))
+        tk.Label(self.root, text=f"Using {self.segmentation_algorithm.upper()} - Click on the image to add points").pack(pady=(0, 10))
         
         # Create a frame for the image
         image_frame = tk.Frame(self.root)
@@ -527,10 +585,10 @@ class ImageApp:
                                 state=tk.DISABLED if self.current_image_index == 0 else tk.NORMAL)
         prev_button.pack(side=tk.LEFT, padx=10)
         
-        # Next button - goes to 4 image screen
+        # Next button - goes to 4 image screen - should always be enabled
         next_button = tk.Button(button_frame, text="Next", 
-                               command=lambda: self.process_and_display_images(self.current_binary_image, self.scale), 
-                               state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL)
+                            command=lambda: self.process_and_display_images(self.current_binary_image, self.scale), 
+                            state=tk.NORMAL)  # Always enabled
         next_button.pack(side=tk.RIGHT, padx=10)
 
     def on_canvas_click(self, event):
@@ -555,34 +613,8 @@ class ImageApp:
         # Automatically process segmentation with the new point
         self.process_with_points()
 
-    def clear_points(self):
-        """Clear all points and reset the view."""
-        # Remove all point markers
-        for marker in self.point_markers:
-            self.canvas.delete(marker)
-        
-        # Clear the points list
-        self.points = []
-        self.point_markers = []
-        
-        # Reset the binary image
-        self.current_binary_image = np.zeros((self.current_image.shape[0], self.current_image.shape[1]), dtype=np.uint8)
-        
-        # Reset the image to the original
-        h, w = self.current_image.shape[:2]
-        max_width, max_height = 800, 600
-        scale = min(max_width / w, max_height / h)
-        new_size = (int(w * scale), int(h * scale))
-        
-        image_resized = cv2.resize(self.current_image, new_size)
-        pil_image = Image.fromarray(image_resized)
-        self.image_photo = ImageTk.PhotoImage(pil_image)
-        self.canvas.itemconfig(self.canvas_image, image=self.image_photo)
-        
-        print("Cleared all points and reset view")
-
     def process_with_points(self):
-        """Process the image using FastSAM with the selected points."""
+        """Process the image using the selected algorithm with the selected points."""
         if not self.points:
             return
         
@@ -590,22 +622,31 @@ class ImageApp:
         inv_scale = 1.0 / self.display_scale
         scaled_points = [(int(x * inv_scale), int(y * inv_scale)) for x, y in self.points]
         
-        # Process image using FastSAM with points
-        binary_image = fastsam_method(self.model, self.device, self.current_image, points=scaled_points)
-        self.current_binary_image = binary_image
+        # Process image using the selected algorithm
+        if self.segmentation_algorithm == 'fastsam':
+            initial_binary_image = fastsam_method(self.model, self.device, self.current_image, points=scaled_points)
+        elif self.segmentation_algorithm == 'sam':
+            initial_binary_image = sam_method(self.predictor, self.device, self.current_image, points=scaled_points)
         
         # Find contours in binary image
-        contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        contours, _ = cv2.findContours(initial_binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         
         if not contours:
             return
                 
         largest_contour = max(contours, key=cv2.contourArea)
         
-        # Create a copy of the original image to draw contours on
+        # Create a blank image and draw only the largest contour filled in
+        clean_binary = np.zeros(initial_binary_image.shape, dtype=np.uint8)
+        cv2.drawContours(clean_binary, [largest_contour], -1, 255, -1)  # -1 thickness means filled
+        
+        # Set this as our current binary image
+        self.current_binary_image = clean_binary
+        
+        # Create a copy of the original image to draw contours on (for display)
         image_with_contour = self.current_image.copy()
         
-        # Draw the contours on the original image
+        # Draw the contours on the original image for visualization
         cv2.drawContours(image_with_contour, [largest_contour], -1, (0, 255, 0), 10)
         
         # Resize for display
@@ -638,77 +679,354 @@ class ImageApp:
             )
             self.point_markers.append(marker)
 
-    def process_with_center(self):
-        """Process the image using FastSAM with the center point (original behavior)."""
-        # Process image using FastSAM method with default center point
-        binary_image = fastsam_method(self.model, self.device, self.current_image)
-        self.current_binary_image = binary_image
+    def clear_points(self):
+        """Clear all points and reset the view."""
+        # Remove all point markers
+        for marker in self.point_markers:
+            self.canvas.delete(marker)
         
-        # Show result
-        self.display_segmentation_result(binary_image)
-
-    def display_segmentation_result(self, binary_image):
-        """Display the segmentation result and continue to the 4 images screen."""
-        # Find contours in binary image
-        contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        # Clear the points list
+        self.points = []
+        self.point_markers = []
         
-        if not contours:
-            messagebox.showerror("Error", "No contours found in the segmentation result. Please try again.")
-            return
-            
-        largest_contour = max(contours, key=cv2.contourArea)
-
-        # Create a copy of the original image to draw contours on
-        image_with_contour = self.current_image.copy()
+        # Reset the binary image
+        self.current_binary_image = np.zeros((self.current_image.shape[0], self.current_image.shape[1]), dtype=np.uint8)
         
-        # Draw the contours on the original image
-        cv2.drawContours(image_with_contour, [largest_contour], -1, (0, 255, 0), 10)
-        
-        # Clear existing widgets
-        for widget in self.root.winfo_children():
-            widget.destroy()
-            
-        # Display image info
-        tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)} - {self.image_name}").pack(pady=(10, 0))
-        tk.Label(self.root, text="Segmentation Result").pack(pady=(0, 10))
-        
-        # Resize image for display
-        h, w = image_with_contour.shape[:2]
+        # Reset the image to the original
+        h, w = self.current_image.shape[:2]
         max_width, max_height = 800, 600
         scale = min(max_width / w, max_height / h)
         new_size = (int(w * scale), int(h * scale))
         
-        image_resized = cv2.resize(image_with_contour, new_size)
+        image_resized = cv2.resize(self.current_image, new_size)
+        pil_image = Image.fromarray(image_resized)
+        self.image_photo = ImageTk.PhotoImage(pil_image)
+        self.canvas.itemconfig(self.canvas_image, image=self.image_photo)
         
-        # Convert to PIL Image for tkinter
-        image_photo = ImageTk.PhotoImage(Image.fromarray(image_resized))
+        print("Cleared all points and reset view")
+
+    def draw_curved_axis(self, img, axis1_points, axis2_points, scale=1):
+
+        img_to_save = img.copy()
         
-        # Display image with contour
-        image_label = tk.Label(self.root, image=image_photo)
-        image_label.image = image_photo  # Keep a reference
-        image_label.pack(pady=10)
+        # Calculate lengths and draw curves
+        len1 = 0
+        len2 = 0
+        
+        # Draw and calculate length for axis 1 (left button points)
+        if len(axis1_points) > 1:
+            # For drawing a smooth curve, we connect the points with lines
+            for i in range(len(axis1_points)-1):
+                pt1 = axis1_points[i]
+                pt2 = axis1_points[i+1]
+                cv2.line(img_to_save, (int(pt1[0]), int(pt1[1])), 
+                        (int(pt2[0]), int(pt2[1])), (0, 0, 255), thickness=3)
+                # Add to length
+                segment_length = np.linalg.norm(np.array(pt2) - np.array(pt1)) * scale * 1000  # Convert to um
+                len1 += segment_length
+                
+            # Display the length near the last point
+            last_point = axis1_points[-1]
+            cv2.putText(img_to_save, f"{int(len1)} um", (int(last_point[0])+20, int(last_point[1])-3),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+                    
+        # Draw and calculate length for axis 2 (right button points)
+        if len(axis2_points) > 1:
+            for i in range(len(axis2_points)-1):
+                pt1 = axis2_points[i]
+                pt2 = axis2_points[i+1]
+                cv2.line(img_to_save, (int(pt1[0]), int(pt1[1])), 
+                        (int(pt2[0]), int(pt2[1])), (255, 0, 0), thickness=3)
+                # Add to length
+                segment_length = np.linalg.norm(np.array(pt2) - np.array(pt1)) * scale * 1000  # Convert to um
+                len2 += segment_length
+                
+            # Display the length near the last point
+            last_point = axis2_points[-1]
+            cv2.putText(img_to_save, f"{int(len2)} um", (int(last_point[0])+20, int(last_point[1])-3),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 3)
+        
+        return img_to_save, len1, len2
+
+    def show_correction_screen(self):
+        """Display a screen to manually draw curved axes on the original image."""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        
+        # Unbind any existing key events
+        self.root.unbind('<Key>')
+
+        # Initialize points for each axis
+        self.axis1_points = []  # Left mouse button points
+        self.axis2_points = []  # Right mouse button points
+        
+        # Point markers
+        self.axis1_markers = []
+        self.axis2_markers = []
+        
+        # Display image info
+        tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)} - {self.image_name}").pack()
+        
+        # Display color and transparency info instead of mouse click instruction
+        trans_code = '1' if self.current_transparency == 'Transparent' else '2'
+        self.color_trans_label = tk.Label(self.root, text=f"Color: {self.current_color}, Transparency: {trans_code}")
+        self.color_trans_label.pack()
+        
+        # Small instruction note about axes (less prominent)
+        tk.Label(self.root, text="Left click: Axis 1 (red) | Right click: Axis 2 (blue)", font=("Arial", 8)).pack()
+        
+        # Get the original image without any visualization
+        original_image = self.current_image.copy()
+        
+        # Resize image for display
+        h, w = original_image.shape[:2]
+        max_width, max_height = 1200, 700
+        scale = min(max_width / w, max_height / h)
+        self.correction_display_scale = scale
+        new_size = (int(w * scale), int(h * scale))
+        
+        image_resized = cv2.resize(original_image, new_size)
+        
+        # Create a frame for the image
+        image_frame = tk.Frame(self.root)
+        image_frame.pack(pady=10)
+        
+        # Create a canvas for the image to capture clicks
+        self.canvas = tk.Canvas(image_frame, width=new_size[0], height=new_size[1], 
+                            highlightthickness=1, highlightbackground="black")
+        self.canvas.pack()
+        
+        # Convert to PIL Image and then to PhotoImage for tkinter
+        pil_image = Image.fromarray(image_resized)
+        self.image_photo = ImageTk.PhotoImage(pil_image)
+        
+        # Display the image on the canvas
+        self.canvas_image = self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image_photo)
+        
+        # Bind click events
+        self.canvas.bind("<Button-1>", self.on_left_click_correction)  # Left click for axis 1
+        self.canvas.bind("<Button-3>", self.on_right_click_correction)  # Right click for axis 2
         
         # Button frame
         button_frame = tk.Frame(self.root)
         button_frame.pack(pady=10)
         
-        # Back button to return to point selection
-        back_button = tk.Button(button_frame, text="Back", command=self.show_current_image)
-        back_button.pack(side=tk.LEFT, padx=10)
+        # Clear button
+        clear_button = tk.Button(button_frame, text="Clear", command=self.clear_correction_points)
+        clear_button.pack(side=tk.LEFT, padx=10)
         
-        # Next button to continue to axis selection
-        next_button = tk.Button(
+        # Back button
+        back_button = tk.Button(button_frame, text="Back", 
+                            command=lambda: self.process_and_display_images(self.current_binary_image, self.scale))
+        back_button.pack(side=tk.LEFT, padx=30)
+        
+        # Next and Save button (renamed from Apply and Save)
+        is_last_image = self.current_image_index == len(self.image_files) - 1
+        next_save_button = tk.Button(
             button_frame, 
-            text="Next", 
-            command=lambda: self.process_and_display_images(binary_image, self.scale)
+            text="Save" if is_last_image else "Next and Save", 
+            command=self.apply_correction
         )
-        next_button.pack(side=tk.RIGHT, padx=10)
+        next_save_button.pack(side=tk.RIGHT, padx=10)
+        
+        # Add key bindings for color and transparency
+        self.root.bind('<Key>', self.handle_key_press)
     
-    def process_binary_image(self, binary_image):
-        """Store the binary image and process it"""
-        self.current_binary_image = binary_image
-        self.process_and_display_images(binary_image, self.scale)
-    
+    def on_left_click_correction(self, event):
+        """Handle left-click to add points for axis 1."""
+        # Get click coordinates
+        x, y = event.x, event.y
+        
+        # Add point to axis 1
+        self.axis1_points.append((x, y))
+        
+        # Draw marker
+        point_radius = 5
+        marker = self.canvas.create_oval(
+            x - point_radius, y - point_radius, 
+            x + point_radius, y + point_radius, 
+            fill="red", outline="red", width=2
+        )
+        self.axis1_markers.append(marker)
+        
+        # Update the display
+        self.update_correction_display()
+
+    def on_right_click_correction(self, event):
+        """Handle right-click to add points for axis 2."""
+        # Get click coordinates
+        x, y = event.x, event.y
+        
+        # Add point to axis 2
+        self.axis2_points.append((x, y))
+        
+        # Draw marker
+        point_radius = 5
+        marker = self.canvas.create_oval(
+            x - point_radius, y - point_radius, 
+            x + point_radius, y + point_radius, 
+            fill="blue", outline="blue", width=2
+        )
+        self.axis2_markers.append(marker)
+        
+        # Update the display
+        self.update_correction_display()
+
+    def update_correction_display(self):
+        """Update the display with current axis lines."""
+        if not (self.axis1_points or self.axis2_points):
+            return
+        
+        # Convert display points to original image coordinates
+        inv_scale = 1.0 / self.correction_display_scale
+        
+        axis1_orig = [(int(x * inv_scale), int(y * inv_scale)) for x, y in self.axis1_points]
+        axis2_orig = [(int(x * inv_scale), int(y * inv_scale)) for x, y in self.axis2_points]
+        
+        # Generate image with axes
+        img_with_axes, len1, len2 = self.draw_curved_axis(self.current_image, axis1_orig, axis2_orig, scale=self.scale)
+        
+        # Resize for display
+        h, w = img_with_axes.shape[:2]
+        new_size = (int(w * self.correction_display_scale), int(h * self.correction_display_scale))
+        img_resized = cv2.resize(img_with_axes, new_size)
+        
+        # Update the canvas with the new image
+        pil_image = Image.fromarray(img_resized)
+        self.image_photo = ImageTk.PhotoImage(pil_image)
+        self.canvas.itemconfig(self.canvas_image, image=self.image_photo)
+        
+        # Store the lengths
+        self.axis1_length = len1
+        self.axis2_length = len2
+        
+        # Redraw all markers on top of the updated image
+        for marker in self.axis1_markers + self.axis2_markers:
+            self.canvas.delete(marker)
+        
+        self.axis1_markers = []
+        self.axis2_markers = []
+        
+        # Redraw axis 1 markers (red)
+        for x, y in self.axis1_points:
+            point_radius = 5
+            marker = self.canvas.create_oval(
+                x - point_radius, y - point_radius, 
+                x + point_radius, y + point_radius, 
+                fill="red", outline="red", width=2
+            )
+            self.axis1_markers.append(marker)
+        
+        # Redraw axis 2 markers (blue)
+        for x, y in self.axis2_points:
+            point_radius = 5
+            marker = self.canvas.create_oval(
+                x - point_radius, y - point_radius, 
+                x + point_radius, y + point_radius, 
+                fill="blue", outline="blue", width=2
+            )
+            self.axis2_markers.append(marker)
+
+    def update_correction_display_with_color(self):
+        """Update the color and transparency display in the correction screen."""
+        if hasattr(self, 'color_trans_label') and self.color_trans_label.winfo_exists():
+            # Update the text label
+            trans_code = '1' if self.current_transparency == 'Transparent' else '2'
+            self.color_trans_label.config(text=f"Color: {self.current_color}, Transparency: {trans_code}")
+
+    def clear_correction_points(self):
+        """Clear all points and reset the display."""
+        # Remove all markers
+        for marker in self.axis1_markers + self.axis2_markers:
+            self.canvas.delete(marker)
+        
+        # Clear point lists
+        self.axis1_points = []
+        self.axis2_points = []
+        self.axis1_markers = []
+        self.axis2_markers = []
+        
+        # Reset display to original image
+        h, w = self.current_image.shape[:2]
+        new_size = (int(w * self.correction_display_scale), int(h * self.correction_display_scale))
+        img_resized = cv2.resize(self.current_image, new_size)
+        
+        pil_image = Image.fromarray(img_resized)
+        self.image_photo = ImageTk.PhotoImage(pil_image)
+        self.canvas.itemconfig(self.canvas_image, image=self.image_photo)
+
+    def apply_correction(self):
+        """Apply the curved axis measurement and save results."""
+        if not (self.axis1_points or self.axis2_points):
+            messagebox.showinfo("Info", "No measurements to apply.")
+            return
+        
+        try:
+            # Convert display points to original image coordinates
+            inv_scale = 1.0 / self.correction_display_scale
+            
+            axis1_orig = [(int(x * inv_scale), int(y * inv_scale)) for x, y in self.axis1_points]
+            axis2_orig = [(int(x * inv_scale), int(y * inv_scale)) for x, y in self.axis2_points]
+            
+            # Generate final image with axes
+            img_with_axes, len1, len2 = self.draw_curved_axis(self.current_image, axis1_orig, axis2_orig, scale=self.scale)
+            
+            # Determine which axis is longer
+            if len1 <= len2:
+                axis_x, axis_y = len1, len2
+            else:
+                axis_x, axis_y = len2, len1
+            
+            # Store the corrected points and lengths
+            self.corrected_axis_lengths = (axis_x, axis_y)
+            
+            # Save and continue as if "Next and Save" was clicked
+            # Convert RGB back to BGR for saving with OpenCV
+            image_name = f'{self.image_name}.png'
+            save_path = os.path.join(self.save_folder, image_name)
+            
+            # Convert RGB to BGR for saving
+            img_bgr = cv2.cvtColor(img_with_axes, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(save_path, img_bgr)
+
+            # Extract plate number and hole with error handling
+            plate_match = re.search(r"P(\d+)", self.image_name)
+            plate_number = plate_match.group(1) if plate_match else "unknown"
+            
+            hole_match = re.search(r"-([A-Za-z]\d+)", self.image_name)
+            plate_hole = hole_match.group(1) if hole_match else "unknown"
+            
+            data = {
+                "id": self.current_image_index + 1,
+                "image_name": self.image_name,
+                "surface": 'plate',
+                "plate_number": plate_number,
+                "plate_hole": plate_hole,
+                "axis_x": axis_x,
+                "axis_y": axis_y,
+                "size": compute_size_given_axis_len(axis_y),
+                "colour": self.current_color,
+                "transparency": self.current_transparency
+            }
+            # Note: axis1_points and axis2_points are no longer included in the JSON
+            
+            data_filename = os.path.join(self.save_folder, f'{self.image_name}.json')
+            with open(data_filename, 'w') as f:
+                json.dump(data, f, indent=4)
+            
+            # No success message popup
+            
+            # Move to next image
+            if self.current_image_index < len(self.image_files) - 1:
+                self.next_image()
+            else:
+                # For the last image, return to the folder selection screen
+                self.create_folder_selection_screen()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to apply correction: {str(e)}")
+
     def next_image_without_saving(self):
         """Move to the next image without saving anything."""
         if self.current_image_index < len(self.image_files) - 1:
@@ -725,9 +1043,14 @@ class ImageApp:
         # Save the current image with axis lines using the selected midpoints.
         if hasattr(self, 'selected_midpoints'):
             img_to_save, axis_length1, axis_length2 = draw_midpoints_fit(self.current_image, self.selected_midpoints, scale=self.scale)
+            # Convert from mm to um
+            axis_length1 *= 1000
+            axis_length2 *= 1000
+            # Convert RGB back to BGR for saving with OpenCV
+            img_to_save_bgr = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
             image_name = f'{self.image_name}.png'
-            save_path = os.path.join(self.save_folder, cv2.cvtColor(image_name, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(save_path, img_to_save)
+            save_path = os.path.join(self.save_folder, image_name)
+            cv2.imwrite(save_path, img_to_save_bgr)
 
         if axis_length1 <= axis_length2:
             axis_x, axis_y = axis_length1, axis_length2
@@ -757,8 +1080,13 @@ class ImageApp:
         with open(data_filename, 'w') as f:
             json.dump(data, f, indent=4)
 
-        self.next_image()
-    
+        # Only proceed to next image if it's not the last one
+        if self.current_image_index < len(self.image_files) - 1:
+            self.next_image()
+        else:
+            # For the last image, return to the folder selection screen
+            self.create_folder_selection_screen()
+        
     def previous_image(self):
         """Move to the previous image if available."""
         if self.current_image_index > 0:

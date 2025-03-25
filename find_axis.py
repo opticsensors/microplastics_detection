@@ -219,9 +219,9 @@ def max_min_fit(binary_img):
 def draw_midpoints_fit(img, midpoints, scale=1):
     midpoint1, midpoint2, midpoint3, midpoint4 = midpoints
     
-    # Calculate lengths
-    len1 = np.linalg.norm(midpoint1-midpoint3)*scale
-    len2 = np.linalg.norm(midpoint2-midpoint4)*scale
+    # Calculate lengths - convert from mm to um (multiply by 1000)
+    len1 = np.linalg.norm(midpoint1-midpoint3)*scale*1000
+    len2 = np.linalg.norm(midpoint2-midpoint4)*scale*1000
     
     # Determine colors based on which axis is longer
     if len1 > len2:
@@ -238,13 +238,13 @@ def draw_midpoints_fit(img, midpoints, scale=1):
     # Draw first axis
     cv2.line(img_to_save, (int(midpoint1[0]), int(midpoint1[1])), 
              (int(midpoint3[0]), int(midpoint3[1])), color1, thickness=3)
-    cv2.putText(img_to_save, f"{len1:.2f} mm", (int(p1[0])+20, int(p1[1])-3),
+    cv2.putText(img_to_save, f"{int(len1)} um", (int(p1[0])+20, int(p1[1])-3),
                cv2.FONT_HERSHEY_SIMPLEX, 1, color1, 3)
     
     # Draw second axis
     cv2.line(img_to_save, (int(midpoint2[0]), int(midpoint2[1])), 
              (int(midpoint4[0]), int(midpoint4[1])), color2, thickness=3)
-    cv2.putText(img_to_save, f"{len2:.2f} mm", (int(p2[0])+20, int(p2[1])-3),
+    cv2.putText(img_to_save, f"{int(len2)} um", (int(p2[0])+20, int(p2[1])-3),
                cv2.FONT_HERSHEY_SIMPLEX, 1, color2, 3)
     
     return img_to_save, len1, len2
