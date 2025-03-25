@@ -4,9 +4,8 @@ from PIL import Image, ImageTk
 import cv2
 import os
 from find_axis import *
-from find_blob_with_sam import *
+from find_blob import *
 from find_scale import *
-from utils import *
 import json
 import re
 import numpy as np

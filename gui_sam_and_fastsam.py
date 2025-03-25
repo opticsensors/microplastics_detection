@@ -4,9 +4,8 @@ from PIL import Image, ImageTk
 import cv2
 import os
 from find_axis import *
-from find_blob_with_sam import *
+from find_blob import *
 from find_scale import *
-from utils import *
 import json
 import re
 import numpy as np
@@ -372,12 +371,13 @@ class ImageApp:
                             command=lambda: self.process_and_display_images(self.current_binary_image, self.scale))
         back_button.pack(side=tk.LEFT, padx=10)
 
-        # Next and Save button
+        # Next and Save button (or just Save for the last image)
+        is_last_image = self.current_image_index == len(self.image_files) - 1
         next_save_button = tk.Button(
             nav_frame,
-            text="Next and Save",
+            text="Save" if is_last_image else "Next and Save",
             command=self.save_and_next_image,
-            state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL
+            state=tk.NORMAL  # Always enabled
         )
         next_save_button.pack(side=tk.RIGHT, padx=10)
         
@@ -487,17 +487,19 @@ class ImageApp:
         back_button = tk.Button(button_frame, text="Back", command=on_back_click)
         back_button.pack(side=tk.LEFT, padx=10)
 
-        # Next and Save button
+        # Next and Save button (or just Save for the last image)
+        is_last_image = self.current_image_index == len(self.image_files) - 1
         next_save_button = tk.Button(
             button_frame, 
-            text="Next and Save", 
+            text="Save" if is_last_image else "Next and Save", 
             command=on_save_next_click,
-            state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL
+            state=tk.NORMAL  # Always enabled
         )
         next_save_button.pack(side=tk.RIGHT, padx=10)
         
         # Bind key events
         self.root.bind('<Key>', self.handle_key_press)
+
 
     def show_current_image(self):
         """Display the current image with interactive point selection."""
@@ -573,10 +575,10 @@ class ImageApp:
                                 state=tk.DISABLED if self.current_image_index == 0 else tk.NORMAL)
         prev_button.pack(side=tk.LEFT, padx=10)
         
-        # Next button - goes to 4 image screen
+        # Next button - goes to 4 image screen - should always be enabled
         next_button = tk.Button(button_frame, text="Next", 
-                               command=lambda: self.process_and_display_images(self.current_binary_image, self.scale), 
-                               state=tk.DISABLED if self.current_image_index == len(self.image_files) - 1 else tk.NORMAL)
+                            command=lambda: self.process_and_display_images(self.current_binary_image, self.scale), 
+                            state=tk.NORMAL)  # Always enabled
         next_button.pack(side=tk.RIGHT, padx=10)
 
     def on_canvas_click(self, event):
@@ -709,9 +711,11 @@ class ImageApp:
         # Save the current image with axis lines using the selected midpoints.
         if hasattr(self, 'selected_midpoints'):
             img_to_save, axis_length1, axis_length2 = draw_midpoints_fit(self.current_image, self.selected_midpoints, scale=self.scale)
+            # Convert RGB back to BGR for saving with OpenCV
+            img_to_save_bgr = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
             image_name = f'{self.image_name}.png'
             save_path = os.path.join(self.save_folder, image_name)
-            cv2.imwrite(save_path, img_to_save)
+            cv2.imwrite(save_path, img_to_save_bgr)
 
         if axis_length1 <= axis_length2:
             axis_x, axis_y = axis_length1, axis_length2
@@ -741,8 +745,13 @@ class ImageApp:
         with open(data_filename, 'w') as f:
             json.dump(data, f, indent=4)
 
-        self.next_image()
-    
+        # Only proceed to next image if it's not the last one
+        if self.current_image_index < len(self.image_files) - 1:
+            self.next_image()
+        else:
+            # For the last image, return to the folder selection screen
+            self.create_folder_selection_screen()
+        
     def previous_image(self):
         """Move to the previous image if available."""
         if self.current_image_index > 0:
