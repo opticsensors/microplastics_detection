@@ -3,22 +3,9 @@ import re
 import numpy as np
 import cv2
 
-def get_scale(img, scale_type='dark'):
-    # Create binary image based on scale type
-    if scale_type == 'dark':
-        scale = cv2.inRange(img, np.array([60, 0, 0]), np.array([130, 10, 10]))
-    elif scale_type == 'white':
-        scale = cv2.inRange(img, np.array([252, 252, 252]), np.array([255, 255, 255]))
-    else:
-        raise ValueError("scale_type must be 'dark' or 'white'")
-    
-    # Check if scale image is empty
-    if cv2.countNonZero(scale) == 0:
-        return None, None
-    
-    # Find all contours in the binary image
-    contours, _ = cv2.findContours(scale, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+
+def find_best_rect_by_ratio(contours, min_area=20, min_ratio=10):
+
     # If no contours found, return None
     if not contours:
         return None, None
@@ -33,13 +20,16 @@ def get_scale(img, scale_type='dark'):
         x, y, w, h = cv2.boundingRect(contour)
         
         # Skip very small contours that might be noise
-        if w * h < 20:
+        if w * h < min_area:
             continue
         
         # Calculate width to height ratio (avoid division by zero)
         if h > 0:
             ratio = w / h
         else:
+            continue
+
+        if ratio < min_ratio:
             continue
         
         # Update best if this ratio is higher
@@ -48,13 +38,41 @@ def get_scale(img, scale_type='dark'):
             best_contour = contour
             best_rect = (x, y, w, h)
     
+    return best_contour, best_rect
+
+def get_contour_of_scale(img, scale_type='white'):
+    # Create binary image based on scale type
+    if scale_type == 'dark':
+        scale = cv2.inRange(img, np.array([60, 0, 0]), np.array([130, 10, 10]))
+    elif scale_type == 'white':
+        scale = cv2.inRange(img, np.array([252, 252, 252]), np.array([255, 255, 255]))
+    else:
+        raise ValueError("scale_type must be 'dark' or 'white'")
+    
+    # Check if scale image is empty
+    if cv2.countNonZero(scale) == 0:
+        return None, None
+    
+    # Find all contours in the binary image
+    contours, _ = cv2.findContours(scale, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    return scale, contours
+
+def get_scale(img, scale_type='dark', debug=False):
+
+    # Find all contours in the binary image obtained by looking at pixels of same selected color (scale_type)
+    scale, contours = get_contour_of_scale(img, scale_type)
+
+    # Find the best contour and rectangle
+    best_contour, best_rect = find_best_rect_by_ratio(contours)
+
     # If no suitable contour found
     if best_contour is None:
         return None, None
-    
+
     # Unpack the best rectangle
     x, y, w, h = best_rect
-    
+       
     # The length of the scale bar in pixels is the width
     pixel_length = w
     
@@ -94,6 +112,7 @@ def get_scale(img, scale_type='dark'):
     except Exception:
         # If anything goes wrong with text processing, return just the pixel length
         return pixel_length, None
+    
 
 def extract_float(text):
     # If already a float or int, return it directly

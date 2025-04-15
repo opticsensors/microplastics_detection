@@ -142,6 +142,7 @@ class ImageApp:
     def load_images_with_scale(self):
         # Initialize a dictionary to store scales
         self.image_scales = {}
+        self.scale_warnings = {}
         
         # Get images from the white background images folder
         try:
@@ -154,14 +155,30 @@ class ImageApp:
                         # Load the image and compute scale
                         original_img = cv2.imread(original_image_path)
                         pixel_length, text = get_scale(original_img, scale_type=self.scale_type)
-                        scale = extract_float(text) / pixel_length
-                        
+
+                        if pixel_length is None:
+                            text = 0
+                            scale_warning = f'Deleting because SCALE not found in: {image_file}'
+                            print(self.scale_warning)
+
+                        if text is None:
+                            text = 1
+                            scale_warning = f'Error reading SCALE. We assume scale is 1 mm in: {image_file}'
+                            print(scale_warning)
+
+                        else:
+                            scale = extract_float(text) / pixel_length
+                            scale_warning = 'SCALE correctly detected'
+                            
                         # Store the scale in the dictionary
                         self.image_scales[image_file] = scale
+                        self.scale_warnings[image_file] = scale_warning
+
                     else:
                         # Handle missing original image
-                        self.image_scales[image_file] = None
-                
+                        print('Handle missing original image: ', image_file)
+                        self.image_scales[image_file] = 1
+                    
                 # Set the current image index and display the first image
                 self.current_image_index = 0
                 self.show_current_image()
@@ -548,7 +565,7 @@ class ImageApp:
         
         # Display image info
         tk.Label(self.root, text=f"Image {self.current_image_index + 1} of {len(self.image_files)} - {self.image_name}").pack(pady=(10, 0))
-        tk.Label(self.root, text=f"Using {self.segmentation_algorithm.upper()} - Click on the image to add points").pack(pady=(0, 10))
+        tk.Label(self.root, text=f"{self.scale_warnings[image_file]}").pack(pady=(0, 10))
         
         # Create a frame for the image
         image_frame = tk.Frame(self.root)
