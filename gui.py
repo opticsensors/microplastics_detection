@@ -156,12 +156,7 @@ class ImageApp:
                         original_img = cv2.imread(original_image_path)
                         pixel_length, text = get_scale(original_img, scale_type=self.scale_type)
 
-                        if pixel_length is None:
-                            text = 0
-                            scale_warning = f'Deleting because SCALE not found in: {image_file}'
-                            print(self.scale_warning)
-
-                        if text is None:
+                        if text is None or pixel_length is None:
                             text = 1
                             scale_warning = f'Error reading SCALE. We assume scale is 1 mm in: {image_file}'
                             print(scale_warning)
